@@ -3,28 +3,37 @@ Option Explicit
 'declarations
 
 'workbooks
-Dim wbImport, wb2, wb3 As Workbook
+Dim wbImport, wbAdd, wb3 As Workbook
+'global locks
+Public keyLock As Integer
 
 'counters and utility
-Public totalCount As Integer 'holds workbook max size
+'Public totalCount As Integer 'holds workbook max size
 Public startRowPos As Integer 'for header y position
 Dim hasNoValue 'holds getEOF() boolean value (to determine EOF)
 'ArrayList Objects
 '      0         1      2          3            4        'diff' not evaluated until after
-Public customer, iccid, device_id, vol_allowed, vol_used As Object
-Public customerE, iccidE, device_idE, vol_allowedE, vol_usedE, diff As Object
+Public customer, iccid, device_id, vol_allowed, vol_used, diff As Object
+'Public customerE, iccidE, device_idE, vol_allowedE, vol_usedE, diff As Object
 'will hold the evaluated data
 'oversList for those who went over their data, undersList for those who used less than 75%
-Public oversList, undersList As Object
+'Public oversList, undersList As Object
+Public oversList()
 
 
 'Set wb1 = ThisWorkbook
 'Set wb2 = Workbooks.Open(Application.FindFile)
 'Set wb3 = Workbooks.Add
 
-'start point and main routine for our application
-Sub buttonClicked()
 
+'--------------------------------------------------------------------------------------------------
+'       main routine - buttonClicked() delegates tasks to parseFile() and printEvaluation()
+
+
+'effectively the main routine for this application
+Sub buttonClicked()
+    'variable declarations
+    Dim totalCount As Integer: totalCount = 0
     'MsgBox "hello world"
     'Cells(14, 7) = "hello world again"
     
@@ -43,7 +52,7 @@ Sub buttonClicked()
     Dim charge: charge = True
     While charge = True
         On Error Resume Next
-        totalCount = InputBox("Enter total amount of rows to parse.")
+        totalCount = InputBox("Enter number of rows to parse.")
         If Err.number <> 0 Then
             MsgBox ("Please enter a numerical value. " & "[" & Err.Description & "]")
         End If
@@ -60,11 +69,17 @@ Sub buttonClicked()
     Call parseFile(0, 0, totalCount) 'parameters: y(row), x(column), totalAmount
     
     'Call printEvaluation subroutine (at bottom of document)
-    Call printEvaluation
+    Call printEvaluation(totalCount)
     
     'Cells(14, 7) = Columns
 
-End Sub
+End Sub 'end of main routine <<< <<< <<< <<< <<< <<< <<< <<<
+
+
+
+'                               parseFile() processes below this line
+'--------------------------------------------------------------------------------------------------
+
 
 
 'this routine will look for first cell that is not empty
@@ -74,7 +89,6 @@ Sub lookupStart(x As Integer, y As Integer)
     'declare local variables
     Dim count, countOver
     
-    MsgBox "Inside lookupStart" 'debug
     'init local variables (for custom plotting)
     count = y
     countOver = x
@@ -108,8 +122,6 @@ Sub lookupStart(x As Integer, y As Integer)
     End If
     'sets public startRowPos variable as count variable value
     startRowPos = count
-    
-    MsgBox "End of lookupStart"
     
 End Sub
 
@@ -223,48 +235,6 @@ Function getHeaderData(size As Integer) As Object
 End Function
 
 
-'creates evaluated List
-Function setOversList(size As Integer)
-
-    'variable declarations
-    Dim index As Integer: index = 0
-    Dim tandem As Double: tandem = 0
-    
-    'create ArrayList Object for diff
-    Set oversList = CreateObject("System.Collections.ArrayList")
-    
-    'evaluate vol_allowed against vol_used to calculate overages
-    While index < size
-    
-        MsgBox "in penultimate while"
-        
-        On Error Resume Next
-        tandem = vol_allowed.Item(index) - vol_used.Item(index)
-        oversList.Add tandem
-        
-        If tandem > 0 Then
-        
-            customerE.Add customer.Item(index)
-            iccidE.Add iccid.Item(index)
-            device_idE.Add device_id.Item(index)
-            vol_allowedE.Add vol_allowed.Item(index)
-            vol_usedE.Add vol_used.Item(index)
-            diff.Add tandem
-            
-        Next
-        
-        If Err.number <> 0 Then
-            MsgBox Err.Description
-        End If
-        
-        index = index + 1
-        
-    Wend
-    
-End Function
-
-
-
 'this routine will lookup headers to get data from column
 'perhaps this is the most important function
 Function lookupHeaders(size As Integer)
@@ -321,14 +291,17 @@ Function lookupHeaders(size As Integer)
         
     Wend
     'create oversList ArrayList
-    Set oversList = setOversList(size)
+    'Set oversList = setOversList(size)
     
     'remove 'If' statement key
     Erase locked
     
 End Function
 
-'-----------------------------------------------------------------------------
+
+
+'--------------------------------------------------------------------------------------------------
+'                               parseFile() processes above this line
 
 
 'controls the process of parsing the imported file and storing data
@@ -337,15 +310,158 @@ Sub parseFile(x As Integer, y As Integer, size As Integer)
     Call lookupStart(x, y)
     Call lookupHeaders(size)
     
-    MsgBox "Back in parseFile"
-    
 End Sub
+
+
+'                               printEvaluation() processes below this line
+'--------------------------------------------------------------------------------------------------
+
+
+
+'creates evaluated List
+Function setOversList(size As Integer)
+
+    'variable declarations
+    Dim counter As Integer
+    Dim index As Integer: index = 0
+    Dim tandem As Double: tandem = 0
+    
+    'evaluate vol_allowed against vol_used to get array size
+    While index < size
+        tandem = CDbl(vol_used.Item(index)) - CDbl(vol_allowed.Item(index))
+        If tandem > 0 Then
+            counter = counter + 1
+        End If
+        index = index + 1
+    Wend
+    
+    'set array size
+    ReDim oversList(counter)
+    
+    index = 0
+    counter = 0
+    'evaluate vol_allowed against vol_used to calculate overages
+    While index < size
+        tandem = CDbl(vol_used.Item(index)) - CDbl(vol_allowed.Item(index))
+        If tandem > 0 Then
+            oversList(counter) = index
+            counter = counter + 1
+        End If
+        index = index + 1
+    Wend
+    'at this point, array will contain index positions of rows that match requirements
+    
+End Function
+
+
+Function printer(size As Integer)
+    
+    'variable declaration
+    Dim index As Integer
+    Dim indexOvers As Integer
+    
+    keyLock = 0
+    'this while loop prints headers
+    While keyLock < 1
+    
+        ActiveCell = "Customer"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "ICCID"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "Device ID"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "Monthly Rate Plan"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "Data Used"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "Amount Over"
+        ActiveCell.Offset(0, 1).Select
+        
+        ActiveCell = "~ Percent Over"
+        
+        'lock while loop from entry
+        keyLock = keyLock + 1
+        're-initialize ActiveCell
+        ActiveCell.Offset(2, -6).Select
+        
+    Wend
+    
+    indexOvers = 0
+    'this while loop prints values under headers (index value = oversList(indexOvers) value)
+    While index < size Or index > UBound(oversList)
+    
+        'declare and define variables for calculations
+        Dim amountOver
+        Dim percentOver
+        amountOver = vol_used.Item(index) - vol_allowed(index)
+        percentOver = (amountOver * 100) / vol_allowed(index)
+        
+        'if 'index' value is equal to value stored at 'oversList(indexOvers)'
+        If index = oversList(indexOvers) Then
+        
+            'print out list values according to index locations
+            ActiveCell = customer.Item(index) '
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = iccid.Item(index) '
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = device_id.Item(index) '
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = vol_allowed.Item(index) '
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = vol_used.Item(index) '
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = amountOver
+            ActiveCell.Offset(0, 1).Select
+            
+            ActiveCell = CInt(percentOver)
+            
+            're-initialize ActiveCell
+            ActiveCell.Offset(1, -6).Select
+            'increment overs counter
+            indexOvers = indexOvers + 1
+            
+        End If
+        'increment list counter
+        index = index + 1
+        
+    Wend
+    
+End Function
+
+
 '-----------------------------------------------------------------------------
+'                               printEvaluation() processes above this line
+
 
 
 'controls the process of creating the output Workbook
-Sub printEvaluation()
+Sub printEvaluation(size As Integer)
 
-
+    MsgBox "In printEvaluation"
+    
+    Call setOversList(size)
+    'MsgBox "oversList: " & oversList(0) & ", " & oversList(1)
+    
+    Set wbAdd = Workbooks.Add
+    Cells(2, 2).Select
+    ActiveCell.Value = "Clients who have gone over their data limit are listed below:"
+    ActiveCell.Offset(2, 0).Select
+    
+    Call printer(size)
 
 End Sub
+
+
+
+'-----------------------------------------------------------------------------
+'                               end of document
