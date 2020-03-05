@@ -1,29 +1,37 @@
 Option Explicit
+' the purpose of this program is to parse an excel worksheet to find a list of
+' users/clients who have gone over their data limit.
+' The length (rows) of the imported list can be specified at the onset of the program,
+' otherwise 300 is the default.
+
 
 'declarations
 
 'workbooks
-Dim wbImport, wbAdd, wb3 As Workbook
+Private wbImport, wbAdd As Workbook
+
 'global locks
-Public keyLock As Integer
+Private keyLock As Integer
 
 'counters and utility
-'Public totalCount As Integer 'holds workbook max size
-Public startRowPos As Integer 'for header y position
-Dim hasNoValue 'holds getEOF() boolean value (to determine EOF)
+Private startRowPos As Integer 'for header 'y' position
+Private globalRow As Integer 'holds current row count (variable value)
+Private globalColumn As Integer 'hold current column count (fixed value)
+
+Private borderColor As Integer 'change in the main function
+Private borderColorOwe As Integer 'change in the main function
+Private headerBackgroundColor As Integer 'change in main function
+Private headerTextColor 'change in the main function
+
+Private hasNoValue 'holds getEOF() boolean value (to determine EOF)
 'ArrayList Objects
 '      0         1      2          3            4        'diff' not evaluated until after
-Public customer, iccid, device_id, vol_allowed, vol_used, diff As Object
-'Public customerE, iccidE, device_idE, vol_allowedE, vol_usedE, diff As Object
-'will hold the evaluated data
+Private customer, iccid, device_id, vol_allowed, vol_used, diff As Object
+
 'oversList for those who went over their data, undersList for those who used less than 75%
-'Public oversList, undersList As Object
-Public oversList()
+'arrays to hold index locations for row retrieval
+Private oversList(), undersList()
 
-
-'Set wb1 = ThisWorkbook
-'Set wb2 = Workbooks.Open(Application.FindFile)
-'Set wb3 = Workbooks.Add
 
 
 '--------------------------------------------------------------------------------------------------
@@ -33,47 +41,132 @@ Public oversList()
 'effectively the main routine for this application
 Sub buttonClicked()
     'variable declarations
-    Dim totalCount As Integer: totalCount = 0
+    Dim totalCount As Variant
+    Dim totalCountInt As Integer: totalCountInt = 0
+    Dim charge As Boolean
+    Dim lockBox As Integer
+    
+    
+    
+    '[<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    'global values can be changed here
+    
+    'logic
+    globalColumn = 7 ' change column count for whole document
+    
+    'formatting
+    borderColor = 35 'change border color here
+    borderColorOwe = 3 'change arrears border color here
+    headerBackgroundColor = 0 'change header background color
+    headerTextColor = 1 'change header text color here, e.g. change to white (2) if borderColor is black (1)
+    
+    ']<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    
+    
     'MsgBox "hello world"
     'Cells(14, 7) = "hello world again"
     
     On Error Resume Next 'Error handling
     'select and import workbook
-    Set wbImport = Workbooks.Open(Application.GetOpenFilename)
-    'error check for wbImport error graceful exit
-    If Err.number <> 0 Then
-        MsgBox Err.Description & " " & "Please try again."
-    End If
+    While lockBox < 1
+        Set wbImport = Workbooks.Open(Application.GetOpenFilename)
+        
+        'if no file is chosen then exit
+        If Err.number = 1004 Then
+            MsgBox "It looks like you havent't chosen anything, Goodbye!" & " [ " & Err.Description & " ] "
+            Call cleanup
+            Exit Sub
+        
+        'error check for wbImport error graceful exit
+        ElseIf Err.number <> 0 Then
+            MsgBox Err.Description & " " & "Please try again."
+            
+        ElseIf Err.number = 0 Then
+            lockBox = lockBox + 1
+        End If
+    Wend
     
     'initialize cell position
     Cells(1, 1).Select
     
     'get user defined document size
-    Dim charge: charge = True
+    
+    charge = True
     While charge = True
-        On Error Resume Next
-        totalCount = InputBox("Enter number of rows to parse.")
-        If Err.number <> 0 Then
-            MsgBox ("Please enter a numerical value. " & "[" & Err.Description & "]")
-        End If
-        If totalCount > 1000 Then
-            MsgBox ("Please enter a number lower than 1000.")
-        ElseIf totalCount = 0 Or totalCount = Null Or Not IsNumeric(totalCount) Then
-            MsgBox "Invalid Input, please try again"
+        'variable declarations
+        lockBox = 0
+        
+        'get user input
+        totalCount = InputBox("Enter number of rows to search or PRESS ENTER for DEFAULT (300). To QUIT type 'X' or 'Q'.")
+        
+        If totalCount = "" Or totalCount = "\n" Then
+            MsgBox "Default amount set:" & " [ " & "300 Max Rows" & " ] "
+            totalCount = 300
+            
+        ElseIf LCase(totalCount) = "x" Or LCase(totalCount = "q") Or totalCount = 0 Then
+            Call cleanup
             Exit Sub
-        Else: charge = False
+        
+        ElseIf (Not IsNumeric(totalCount)) And totalCount <> "\n" Then
+            MsgBox "Please enter a numerical value. " & " [ " & Err.Description & " ] "
+            lockBox = lockBox + 1 'lock the lockBox
+        
+        ElseIf totalCount > 1000 Then                        '<<< MODIFY HERE FOR MAXIMUM AMOUNT <<<
+            MsgBox ("Please enter a number lower than 1000.") '<<< and here for matching message
+            lockBox = lockBox + 1 'lock the lockBox
+            
+        ElseIf IsEmpty(totalCount) Then
+            Call cleanup
+            Exit Sub
         End If
+        
+        'unlock if true
+        If lockBox = 0 Then
+            charge = False
+        End If
+        
+        'if nothing goes wrong, lockbox is open and loop exits
     Wend
     
+    'store variant inside integer to avoid overflow
+    totalCountInt = CInt(totalCount)
+    
     'Call parseFile subroutine (at bottom of document)
-    Call parseFile(0, 0, totalCount) 'parameters: y(row), x(column), totalAmount
+    Call parseFile(0, 0, totalCountInt) 'parameters: y(row), x(column), totalAmount
     
     'Call printEvaluation subroutine (at bottom of document)
-    Call printEvaluation(totalCount)
+    Call printEvaluation(totalCountInt)
     
-    'Cells(14, 7) = Columns
+    'washing dishes time! *quietly leaves
+    Call cleanup
+    
+    'debug window with existing error status
+    MsgBox "Program run complete." & " [ " & "Exit code: " & Err.number & " ] "
 
-End Sub 'end of main routine <<< <<< <<< <<< <<< <<< <<< <<<
+End Sub 'end of main routine
+    
+
+'release script resources
+Function cleanup()
+    
+    'close imported Workbook after use
+    wbImport.Close
+    
+    keyLock = 0
+    'counters and utility
+    startRowPos = 0
+    globalRow = 0
+    globalColumn = 0
+    borderColor = 0
+    headerTextColor = Nothing
+    hasNoValue = Nothing
+    'ArrayList Objects
+    customer = Nothing: iccid = Nothing: device_id = Nothing
+    vol_allowed = Nothing: vol_used = Nothing: diff = Nothing
+    'arrays to hold index locations for row retrieval
+    Erase oversList(), undersList()
+    
+End Function
 
 
 
@@ -86,10 +179,10 @@ End Sub 'end of main routine <<< <<< <<< <<< <<< <<< <<< <<<
 'reduces need for stringent formatting
 'does require (and assumes) first contact is header
 Sub lookupStart(x As Integer, y As Integer)
+
     'declare local variables
     Dim count, countOver
-    
-    'init local variables (for custom plotting)
+    'init local variables (for custom plotting set x,y in parseFile())
     count = y
     countOver = x
     
@@ -183,24 +276,30 @@ Function getNumbers(size As Integer, iden As String)
         'init line then assign value of ActiveCell
         line = ""
         line = ActiveCell.Value
-        'for loop, mid, isNumeric method (to find one number)
-        For i = 1 To Len(line)
-            j = Mid(line, i, 1)
-            If (IsNumeric(j) = True) Then
-                extract = extract & CStr(j)
-            End If
-            If j = "." Then
-                extract = extract & CStr(j)
-            End If
-        Next
-        number = CDbl(extract)
+        
+        'if loop to prevent 'type' error if cell is empty or null
+        If Len(line) > 0 Or line = Null Then
+            'for loop, mid, isNumeric method (to find one number)
+            For i = 1 To Len(line)
+                j = Mid(line, i, 1)
+                If (IsNumeric(j) = True) Then
+                    extract = extract & CStr(j)
+                End If
+                If j = "." Then
+                    extract = extract & CStr(j)
+                End If
+            Next
+            number = CDbl(extract)
+        Else: number = CDbl(0)
+        End If
         
         'additional processing
         If iden = "MB" Then
             number = number * 1024 'convert GB to MB
         End If
+        
         'add to List
-        myList.Add number
+        myList.Add Round(number, 1)
         'update Cell position
         ActiveCell.Offset(1, 0).Select
         'update counter and empty variables
@@ -363,67 +462,128 @@ Function printer(size As Integer)
     keyLock = 0
     'this while loop prints headers
     While keyLock < 1
-    
+        
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
         ActiveCell = "Customer"
         ActiveCell.Offset(0, 1).Select
         
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
         ActiveCell = "ICCID"
         ActiveCell.Offset(0, 1).Select
         
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
         ActiveCell = "Device ID"
         ActiveCell.Offset(0, 1).Select
         
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
         ActiveCell = "Monthly Rate Plan"
         ActiveCell.Offset(0, 1).Select
         
-        ActiveCell = "Data Used"
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
+        ActiveCell = "Data Used (MB)"
         ActiveCell.Offset(0, 1).Select
         
-        ActiveCell = "Amount Over"
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
+        ActiveCell = "Amount Over (MB)"
         ActiveCell.Offset(0, 1).Select
         
+        ActiveCell.Interior.ColorIndex = headerBackgroundColor
+        ActiveCell.Font.size = 14
+        ActiveCell.Font.ColorIndex = headerTextColor
+        ActiveCell.Font.Bold = True
+        ActiveCell.EntireColumn.AutoFit
         ActiveCell = "~ Percent Over"
         
         'lock while loop from entry
         keyLock = keyLock + 1
         're-initialize ActiveCell
-        ActiveCell.Offset(2, -6).Select
+        ActiveCell.Offset(1, -6).Select
         
     Wend
     
+    'MsgBox "After first while"
+    
     indexOvers = 0
     'this while loop prints values under headers (index value = oversList(indexOvers) value)
-    While index < size Or index > UBound(oversList)
-    
+    While index < size 'Or index > UBound(oversList)
+        
+        MsgBox "top of second while"
+        
         'declare and define variables for calculations
-        Dim amountOver
-        Dim percentOver
-        amountOver = vol_used.Item(index) - vol_allowed(index)
-        percentOver = (amountOver * 100) / vol_allowed(index)
+        Dim amountOver As Double
+        Dim percentOver As Double
+        Dim percent As String
+        
+        'if loop to prevent 'type' error if cell is empty or null
+        If vol_allowed(index) <> "" Or vol_used(index) <> "" Then
+            amountOver = Round(vol_used.Item(index) - vol_allowed(index), 1)
+            percentOver = Round((amountOver * 100) / vol_allowed(index), 0)
+            percent = CStr(percentOver) & "%"
+        Else: amountOver = 0: percentOver = 0: percent = ""
+        End If
         
         'if 'index' value is equal to value stored at 'oversList(indexOvers)'
         If index = oversList(indexOvers) Then
         
             'print out list values according to index locations
+            ActiveCell.Interior.ColorIndex = 34
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = customer.Item(index) '
             ActiveCell.Offset(0, 1).Select
             
+            ActiveCell.Interior.ColorIndex = 19
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = iccid.Item(index) '
             ActiveCell.Offset(0, 1).Select
             
+            ActiveCell.Interior.ColorIndex = 19
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = device_id.Item(index) '
             ActiveCell.Offset(0, 1).Select
             
+            ActiveCell.Interior.ColorIndex = 19
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = vol_allowed.Item(index) '
             ActiveCell.Offset(0, 1).Select
             
+            ActiveCell.Interior.ColorIndex = 19
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = vol_used.Item(index) '
             ActiveCell.Offset(0, 1).Select
             
+            ActiveCell.Interior.ColorIndex = 22
+            ActiveCell.Font.Bold = True
+            ActiveCell.EntireColumn.AutoFit
             ActiveCell = amountOver
             ActiveCell.Offset(0, 1).Select
             
-            ActiveCell = CInt(percentOver)
+            ActiveCell.Interior.ColorIndex = 22
+            ActiveCell.EntireColumn.AutoFit
+            ActiveCell = percent
             
             're-initialize ActiveCell
             ActiveCell.Offset(1, -6).Select
@@ -434,9 +594,73 @@ Function printer(size As Integer)
         'increment list counter
         index = index + 1
         
+        MsgBox "Bottom of second while"
+        
+    Wend
+    
+    MsgBox "End printer"
+    
+    'border start location
+    ActiveCell.Offset(1, -1).Select
+    
+    'print border around table
+    Call borderPrinter
+    
+End Function
+
+
+'prints a border around table
+Function borderPrinter()
+
+    'variable declarations
+    Dim index As Integer
+    Dim arrLock(3)
+    
+    index = 0
+    'print right, up, left and down (left, right fixed : up, down variabled)
+    While index < 4
+    
+        While arrLock(index) < globalColumn + 2 'columns right
+            If arrLock(index) < 6 Then
+                ActiveCell.Interior.ColorIndex = borderColor
+            Else:
+                ActiveCell.Interior.ColorIndex = borderColorOwe
+            End If
+            ActiveCell.Offset(0, 1).Select
+            arrLock(index) = arrLock(index) + 1
+        Wend
+        index = index + 1
+    
+        While arrLock(index) <= UBound(oversList) + 3 'rows up
+            ActiveCell.Interior.ColorIndex = borderColorOwe
+            ActiveCell.Offset(-1, 0).Select
+            arrLock(index) = arrLock(index) + 1
+        Wend
+        index = index + 1
+    
+        While arrLock(index) < globalColumn + 3 'columns left
+            If arrLock(index) < 4 Then
+                ActiveCell.Interior.ColorIndex = borderColorOwe
+            Else
+                ActiveCell.Interior.ColorIndex = borderColor
+            End If
+            ActiveCell.Offset(0, -1).Select
+            arrLock(index) = arrLock(index) + 1
+        Wend
+        index = index + 1
+    
+        While arrLock(index) <= UBound(oversList) + 4 'rows down
+            ActiveCell.Interior.ColorIndex = borderColor
+            ActiveCell.Offset(1, 0).Select
+            arrLock(index) = arrLock(index) + 1
+        Wend
+        index = index + 1
+    
     Wend
     
 End Function
+
+
 
 
 '-----------------------------------------------------------------------------
@@ -447,16 +671,26 @@ End Function
 'controls the process of creating the output Workbook
 Sub printEvaluation(size As Integer)
 
-    MsgBox "In printEvaluation"
-    
+    'create index of rows with overs
     Call setOversList(size)
-    'MsgBox "oversList: " & oversList(0) & ", " & oversList(1)
     
+    'add a new workbook for data output
     Set wbAdd = Workbooks.Add
+    
+    'initialize main header location and add formatting
     Cells(2, 2).Select
     ActiveCell.Value = "Clients who have gone over their data limit are listed below:"
-    ActiveCell.Offset(2, 0).Select
+    ActiveCell.Font.size = 24
+    ActiveCell.Font.Bold = True
     
+    'modify signature
+    ActiveCell.Offset(1, 0).Select
+    ActiveCell.Value = "For more information contact the I.T. department" '<<< Modify signature here <<<
+    
+    'initialize table location (top left)
+    ActiveCell.Offset(4, 1).Select
+    
+    'printer function prints data to new Workbook
     Call printer(size)
 
 End Sub
@@ -465,3 +699,7 @@ End Sub
 
 '-----------------------------------------------------------------------------
 '                               end of document
+
+
+
+'Author: Gordon Joyce
