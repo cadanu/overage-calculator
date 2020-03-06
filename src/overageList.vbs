@@ -8,7 +8,8 @@ Option Explicit
 'declarations
 
 'workbooks
-Private wbImport, wbAdd As Workbook
+Private wbImport, wbAdd, wbThis As Workbook
+Private wbPath As String
 
 'global locks
 Private keyLock As Integer
@@ -25,8 +26,8 @@ Private headerTextColor 'change in the main function
 
 Private hasNoValue 'holds getEOF() boolean value (to determine EOF)
 'ArrayList Objects
-'      0         1      2          3            4        'diff' not evaluated until after
-Private customer, iccid, device_id, vol_allowed, vol_used, diff As Object
+'       0         1      2          3            4
+Private customer, iccid, device_id, vol_allowed, vol_used As Object
 
 'oversList for those who went over their data, undersList for those who used less than 75%
 'arrays to hold index locations for row retrieval
@@ -46,7 +47,8 @@ Sub buttonClicked()
     Dim charge As Boolean
     Dim lockBox As Integer
     
-    
+    'set application workbook as ThisWorkBook
+    wbPath = ThisWorkbook.Path
     
     '[<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     'global values can be changed here
@@ -64,16 +66,18 @@ Sub buttonClicked()
     
     
     'MsgBox "hello world"
-    'Cells(14, 7) = "hello world again"
+    Range("B10", "D10").Interior.ColorIndex = 35
+    Cells(10, 2) = "Program is running..."
     
     On Error Resume Next 'Error handling
     'select and import workbook
+    
     While lockBox < 1
         Set wbImport = Workbooks.Open(Application.GetOpenFilename)
         
         'if no file is chosen then exit
         If Err.number = 1004 Then
-            MsgBox "It looks like you havent't chosen anything, Goodbye!" & " [ " & Err.Description & " ] "
+            MsgBox "You didn't choose anything, Goodbye!" & " [ " & Err.Description & " ] "
             Call cleanup
             Exit Sub
         
@@ -124,7 +128,6 @@ Sub buttonClicked()
         If lockBox = 0 Then
             charge = False
         End If
-        
         'if nothing goes wrong, lockbox is open and loop exits
     Wend
     
@@ -140,8 +143,7 @@ Sub buttonClicked()
     'washing dishes time! *quietly leaves
     Call cleanup
     
-    'debug window with existing error status
-    MsgBox "Program run complete." & " [ " & "Exit code: " & Err.number & " ] "
+    
 
 End Sub 'end of main routine
     
@@ -149,23 +151,43 @@ End Sub 'end of main routine
 'release script resources
 Function cleanup()
     
+    'uninitialize non-object variables
+    keyLock = Empty
+    startRowPos = Empty
+    globalRow = Empty
+    globalColumn = Empty
+    borderColor = Empty
+    borderColorOwe = Empty
+    headerTextColor = Empty
+    headerBackgroundColor = Empty
+    
+    'remove object pointers
+    Set hasNoValue = Nothing
+    Set customer = Nothing
+    Set iccid = Nothing
+    Set device_id = Nothing
+    Set vol_allowed = Nothing
+    Set vol_used = Nothing
+    Erase oversList()
+    Erase undersList()
     'close imported Workbook after use
     wbImport.Close
     
-    keyLock = 0
-    'counters and utility
-    startRowPos = 0
-    globalRow = 0
-    globalColumn = 0
-    borderColor = 0
-    headerTextColor = Nothing
-    hasNoValue = Nothing
-    'ArrayList Objects
-    customer = Nothing: iccid = Nothing: device_id = Nothing
-    vol_allowed = Nothing: vol_used = Nothing: diff = Nothing
-    'arrays to hold index locations for row retrieval
-    Erase oversList(), undersList()
-    
+    'close application Workbook after use
+    ThisWorkbook.Activate
+    Cells(10, 2) = "Program will exit..."
+    MsgBox "Program run complete." & " [ " & "Exit code: " & Err.number & " ] "
+    Cells(10, 2) = "Program will exit..."
+    ThisWorkbook.Close (False)
+        
+    'debug block code
+    'On Error Resume Next
+    'If Err.number <> 0 Then
+    '    MsgBox Err.Description
+    '    MsgBox Err.number
+    '    Err.Clear
+    'End If
+        
 End Function
 
 
@@ -458,6 +480,10 @@ Function printer(size As Integer)
     'variable declaration
     Dim index As Integer
     Dim indexOvers As Integer
+    'declare and define variables for calculations
+    Dim amountOver As Double
+    Dim percentOver As Double
+    Dim percent As String
     
     keyLock = 0
     'this while loop prints headers
@@ -531,19 +557,16 @@ Function printer(size As Integer)
     'this while loop prints values under headers (index value = oversList(indexOvers) value)
     While index < size 'Or index > UBound(oversList)
         
-        MsgBox "top of second while"
-        
-        'declare and define variables for calculations
-        Dim amountOver As Double
-        Dim percentOver As Double
-        Dim percent As String
-        
-        'if loop to prevent 'type' error if cell is empty or null
+        'if loop to prevent error if cell is empty or null
         If vol_allowed(index) <> "" Or vol_used(index) <> "" Then
-            amountOver = Round(vol_used.Item(index) - vol_allowed(index), 1)
-            percentOver = Round((amountOver * 100) / vol_allowed(index), 0)
-            percent = CStr(percentOver) & "%"
-        Else: amountOver = 0: percentOver = 0: percent = ""
+            amountOver = CDbl(Round(vol_used.Item(index) - vol_allowed(index), 1))
+            ' to avoid x/0 overflow
+            If amountOver <> 0 Then
+                percentOver = CDbl(Round((amountOver * 100) / vol_allowed(index), 0))
+            End If
+            percent = CStr(percentOver & "%") '4
+        Else
+            amountOver = 0: percentOver = 0: percent = "" '5
         End If
         
         'if 'index' value is equal to value stored at 'oversList(indexOvers)'
@@ -594,11 +617,7 @@ Function printer(size As Integer)
         'increment list counter
         index = index + 1
         
-        MsgBox "Bottom of second while"
-        
     Wend
-    
-    MsgBox "End printer"
     
     'border start location
     ActiveCell.Offset(1, -1).Select
