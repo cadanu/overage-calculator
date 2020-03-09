@@ -1,4 +1,5 @@
 Option Explicit
+' Updated number logic to determine between GB and MB processing
 ' List Generator: for client data overages. v.1.1
 ' the purpose of this program is to parse an excel worksheet to find a list of
 ' users/clients who have gone over their data limit.
