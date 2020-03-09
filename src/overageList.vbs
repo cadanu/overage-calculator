@@ -1,4 +1,5 @@
 Option Explicit
+' List Generator: for client data overages. v.1.1
 ' the purpose of this program is to parse an excel worksheet to find a list of
 ' users/clients who have gone over their data limit.
 ' The length (rows) of the imported list can be specified at the onset of the program,
@@ -19,10 +20,15 @@ Private startRowPos As Integer 'for header 'y' position
 Private globalRow As Integer 'holds current row count (variable value)
 Private globalColumn As Integer 'hold current column count (fixed value)
 
-Private borderColor As Integer 'change in the main function
-Private borderColorOwe As Integer 'change in the main function
-Private headerBackgroundColor As Integer 'change in main function
-Private headerTextColor 'change in the main function
+Private declaration As String 'change in main sub
+Private signature As String 'change in main sub
+Private defaultAmount As Integer 'change in main sub
+Private maxAmount As Integer 'change in main sub
+
+Private borderColor As Integer 'change in the main sub
+Private borderColorOwe As Integer 'change in the main sub
+Private headerBackgroundColor As Integer 'change in main sub
+Private headerTextColor As Integer 'change in the main sub
 
 Private hasNoValue 'holds getEOF() boolean value (to determine EOF)
 'ArrayList Objects
@@ -57,6 +63,11 @@ Sub buttonClicked()
     globalColumn = 7 ' change column count for whole document
     
     'formatting
+    declaration = "Clients who have gone over their data limit are listed below" 'bold large text at top of document
+    signature = "For more information contact the I.T. Department" 'smaller message below declaration
+    defaultAmount = 300 'default amount of rows to parse (more rows takes longer - difficulty is high due to recursive parse)
+    maxAmount = 1001 'maximum amount (to negate chance of mistaken input and resulting undesirable wait time)
+    
     borderColor = 35 'change border color here
     borderColorOwe = 3 'change arrears border color here
     headerBackgroundColor = 0 'change header background color
@@ -101,22 +112,22 @@ Sub buttonClicked()
         lockBox = 0
         
         'get user input
-        totalCount = InputBox("Enter number of rows to search or PRESS ENTER for DEFAULT (300). To QUIT type 'X' or 'Q'.")
+        totalCount = InputBox("Enter number of rows to search or PRESS ENTER for DEFAULT (" & defaultAmount & "). To QUIT type 'X' or 'Q'.")
         
         If totalCount = "" Or totalCount = "\n" Then
-            MsgBox "Default amount set:" & " [ " & "300 Max Rows" & " ] "
-            totalCount = 300
+            MsgBox "Default amount set:" & " [ " & CStr(defaultAmount) & " " & "Max Rows" & " ] "
+            totalCount = defaultAmount
             
         ElseIf LCase(totalCount) = "x" Or LCase(totalCount = "q") Or totalCount = 0 Then
-            Call cleanup
+            Call cleanup 'quit and refresh
             Exit Sub
         
         ElseIf (Not IsNumeric(totalCount)) And totalCount <> "\n" Then
             MsgBox "Please enter a numerical value. " & " [ " & Err.Description & " ] "
             lockBox = lockBox + 1 'lock the lockBox
         
-        ElseIf totalCount > 1000 Then                        '<<< MODIFY HERE FOR MAXIMUM AMOUNT <<<
-            MsgBox ("Please enter a number lower than 1000.") '<<< and here for matching message
+        ElseIf totalCount > maxAmount Then 'for maxAmount
+            MsgBox ("Please enter a number lower than " & maxAmount & ".")
             lockBox = lockBox + 1 'lock the lockBox
             
         ElseIf IsEmpty(totalCount) Then
@@ -134,15 +145,39 @@ Sub buttonClicked()
     'store variant inside integer to avoid overflow
     totalCountInt = CInt(totalCount)
     
+     'debug block code
+    'On Error Resume Next
+    
     'Call parseFile subroutine (at bottom of document)
     Call parseFile(0, 0, totalCountInt) 'parameters: y(row), x(column), totalAmount
+       
+    'If Err.number <> 0 Then
+    '    MsgBox "#1" & Err.Description
+    '    MsgBox Err.number
+    '    Err.Clear
+    'End If
     
     'Call printEvaluation subroutine (at bottom of document)
     Call printEvaluation(totalCountInt)
     
+    'If Err.number <> 0 Then
+    '    MsgBox "#2" & Err.Description
+    '    MsgBox Err.number
+    '    Err.Clear
+    'End If
+    
     'washing dishes time! *quietly leaves
     Call cleanup
     
+<<<<<<< HEAD
+=======
+    'If Err.number <> 0 Then
+    '    MsgBox "#1" & Err.Description
+    '    MsgBox Err.number
+    '    Err.Clear
+    'End If
+    
+>>>>>>> cadanu
     
 
 End Sub 'end of main routine
@@ -275,17 +310,21 @@ End Function
 
 
 'evaluates "monthly rate plan", and "" columns and extracts numerical values
-Function getNumbers(size As Integer, iden As String)
+Function getNumbers(size As Integer) ', iden As String
 
     'variable declaration
     Dim line As String
     Dim extract As String
+    Dim converse As String
     Dim number As Double
+    Dim letters As String
     Dim ops As Boolean
     Dim nextChar As Characters
     Dim count As Integer
     Dim i As Integer
     Dim j As Variant
+    Dim k As Variant
+    Dim m As Integer 'loop index modifier
     'initialize ArrayList location in memory
     Dim myList
     
@@ -302,21 +341,47 @@ Function getNumbers(size As Integer, iden As String)
         'if loop to prevent 'type' error if cell is empty or null
         If Len(line) > 0 Or line = Null Then
             'for loop, mid, isNumeric method (to find one number)
+            
             For i = 1 To Len(line)
-                j = Mid(line, i, 1)
+            
+                If i > 1 Then
+                    m = i - 1
+                    k = Mid(line, m, 1) 'for previous char matching
+                End If
+                
+                j = Mid(line, i, 1) 'j = mid function (string, start, length)
+                
+                'test for numbers
                 If (IsNumeric(j) = True) Then
                     extract = extract & CStr(j)
                 End If
+                
+                'test for decimals
                 If j = "." Then
                     extract = extract & CStr(j)
                 End If
+                
+                'test for conversion rate (GB or MB)
+                If LCase(k) = "g" Or LCase(k) = "m" And LCase(j) = "b" Then
+                    converse = CStr(k) & CStr(j)
+                End If
+                
             Next
             number = CDbl(extract)
-        Else: number = CDbl(0)
+            letters = CStr(converse)
+            
+        Else
+            number = CDbl(0)
+            letters = ""
         End If
         
+        'process for GB or MB
+        'If LCase(letters) = "gb" Then
+        '    iden = "gb"
+        'End If
+        
         'additional processing
-        If iden = "MB" Then
+        If LCase(letters) = "gb" Then
             number = number * 1024 'convert GB to MB
         End If
         
@@ -392,14 +457,14 @@ Function lookupHeaders(size As Integer)
         'vol_allowed data
         If LCase(ActiveCell) = "monthly rate plan" And locked(3) < 1 Then
             'set vol_allowed ArrayList to the return value of getNumbers function
-            Set vol_allowed = getNumbers(size, "MB")
+            Set vol_allowed = getNumbers(size)
             locked(3) = 1
         End If
         
         'vol_used data
         If LCase(ActiveCell) = "data volume (mb)" And locked(4) < 1 Then
             'set vol_used ArrayList to the return value of getNumbers function
-            Set vol_used = getNumbers(size, "")
+            Set vol_used = getNumbers(size)
             locked(4) = 1
         End If
         
@@ -698,13 +763,13 @@ Sub printEvaluation(size As Integer)
     
     'initialize main header location and add formatting
     Cells(2, 2).Select
-    ActiveCell.Value = "Clients who have gone over their data limit are listed below:"
+    ActiveCell.Value = declaration
     ActiveCell.Font.size = 24
     ActiveCell.Font.Bold = True
     
     'modify signature
     ActiveCell.Offset(1, 0).Select
-    ActiveCell.Value = "For more information contact the I.T. department" '<<< Modify signature here <<<
+    ActiveCell.Value = signature '<<< Modify signature here <<<
     
     'initialize table location (top left)
     ActiveCell.Offset(4, 1).Select
